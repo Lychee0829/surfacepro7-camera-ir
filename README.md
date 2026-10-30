@@ -218,6 +218,43 @@ exactly one. They both `provides=('surfacepro7-camera-ir')`.
 
 ## 5. Loading and testing
 
+### IOMMU: the ISP must be in an identity-mapped IOMMU group
+
+The IPU4 driver writes CPU physical addresses into the IPU MMU page tables.
+If the kernel's IOMMU translates DMA for the ISP (the default on Ubuntu,
+Fedora and most distribution kernels; check
+`cat /sys/bus/pci/devices/0000:00:05.0/iommu_group/type`, anything other than
+`identity` is affected), firmware authentication fails:
+
+```
+DMAR: [DMA Read NO_PASID] Request device [0000:00:05.0] fault addr ... PTE Read access is not set
+intel-ipu4 intel-ipu: CSE boot_load failed
+FW authentication failed, retrying...
+```
+
+Every open of one of the ~55 video nodes then retries authentication, so
+udev's `v4l_id` probes pile up in uninterruptible sleep and only a reboot
+clears them.
+
+Fix it without turning the IOMMU off for the whole system: switch only the
+ISP's group (on the Surface Pro 7 it contains nothing but `0000:00:05.0`) to
+identity mode before the driver binds. The group type cannot change while a
+driver is bound, so keep udev from loading the stack and load it with
+`scripts/load-ipu4.sh` instead:
+
+```sh
+printf 'blacklist intel_ipu4\nblacklist surfacepro7_acpi\n' | \
+	sudo tee /etc/modprobe.d/ipu4-no-autoload.conf
+# reboot, then (or from a boot-time systemd unit):
+sudo ./scripts/load-ipu4.sh
+```
+
+`blacklist` only stops alias-based autoloading; `modprobe intel_ipu4` in the
+script still works. Booting with `iommu=pt` or `intel_iommu=off` also works but
+relaxes DMA protection for every device.
+
+### Loading by hand
+
 ```sh
 export KERNEL_VERSION=$(uname -r)
 
