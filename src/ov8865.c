@@ -2528,7 +2528,12 @@ static int ov8865_ctrls_init(struct ov8865_sensor *sensor)
 
 	/* Gain */
 
-	v4l2_ctrl_new_std(handler, ops, V4L2_CID_ANALOGUE_GAIN, 128, 2048, 128,
+	/*
+	 * Gain register 0x3508/0x3509 has 7 fractional bits (128 = 1x), so allow
+	 * single-code steps. With a step of 128 the driver rounds libcamera's
+	 * small AGC increments back down to 1x and dim scenes stay dark.
+	 */
+	v4l2_ctrl_new_std(handler, ops, V4L2_CID_ANALOGUE_GAIN, 128, 2048, 1,
 			  128);
 
 	/* White Balance */
