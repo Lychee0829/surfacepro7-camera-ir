@@ -51,7 +51,7 @@ OUT="${OUT:-/var/tmp/${CAM}.raw}"
 MD=""
 for c in /dev/media*; do
 	[ -e "$c" ] || continue
-	media-ctl -d "$c" -p 2>/dev/null | grep -q "$SENSOR_RE" || continue
+	media-ctl -d "$c" -p 2>/dev/null | grep "$SENSOR_RE" >/dev/null || continue
 	MD="$c"
 	break
 done
