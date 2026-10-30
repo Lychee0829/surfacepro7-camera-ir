@@ -27,6 +27,9 @@
 #define IPU_PERF_REG_TRACE
 #include "ipu-trace-event.h"
 
+/* Fail authentication at once for this long after a failed attempt */
+#define IPU_FW_AUTH_BACKOFF	(60 * HZ)
+
 #define BOOTLOADER_STATUS_OFFSET	0x8000
 #define BOOTLOADER_MAGIC_KEY		0xb00710ad
 
@@ -796,6 +799,7 @@ int ipu_buttress_authenticate(struct ipu_device *isp)
 {
 	struct ipu_psys_pdata *psys_pdata;
 	struct ipu_buttress *b = &isp->buttress;
+	unsigned long failed_at;
 	u32 data, mask, done, fail;
 	int rval;
 
@@ -808,6 +812,20 @@ int ipu_buttress_authenticate(struct ipu_device *isp)
 	psys_pdata = isp->psys->pdata;
 
 	mutex_lock(&b->auth_mutex);
+
+	/*
+	 * A failing authentication only ends when the CSE times out (~5 s).
+	 * udev's v4l_id opens all ~55 video nodes at once at boot, and every
+	 * open authenticates; serialised on auth_mutex they keep the probes
+	 * in uninterruptible sleep for many minutes. After a failure, fail
+	 * the callers queued behind it immediately and retry only after
+	 * IPU_FW_AUTH_BACKOFF.
+	 */
+	failed_at = READ_ONCE(isp->fw_auth_failed_at);
+	if (failed_at && time_before(jiffies, failed_at + IPU_FW_AUTH_BACKOFF)) {
+		mutex_unlock(&b->auth_mutex);
+		return -EIO;
+	}
 
 	rval = pm_runtime_get_sync(&isp->psys_iommu->dev);
 	if (rval < 0) {
@@ -915,6 +933,7 @@ iunit_power_off:
 	 * isys power island can never be cycled after an error.
 	 */
 	pm_runtime_put(&isp->psys_iommu->dev);
+	WRITE_ONCE(isp->fw_auth_failed_at, rval ? (jiffies ?: 1) : 0);
 	mutex_unlock(&b->auth_mutex);
 
 	return rval;

@@ -84,6 +84,8 @@ struct ipu_device {
 	bool flr_done;
 	bool ipc_reinit;
 	bool secure_mode;
+	/* jiffies of the last failed firmware authentication, 0 if none */
+	unsigned long fw_auth_failed_at;
 
 	int (*isys_fw_reload)(struct ipu_device *isp);
 	int (*cpd_fw_reload)(struct ipu_device *isp);
